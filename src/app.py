@@ -3,8 +3,8 @@ from __future__ import annotations
 from fastapi import FastAPI
 from fastapi.staticfiles import StaticFiles
 
-from routes import router
-from settings import VIDEOS_DIR
+from src.routes import router
+from src.settings import VIDEOS_DIR
 
 app = FastAPI()
 

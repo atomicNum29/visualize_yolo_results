@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from fastapi.responses import HTMLResponse
 
-from settings import FPS
+from src.settings import FPS
 
 
 def render_index() -> HTMLResponse:
@@ -255,4 +255,3 @@ tick();
 </script>
 """
     )
-

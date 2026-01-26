@@ -2,8 +2,15 @@ from __future__ import annotations
 
 from fastapi import APIRouter, Query
 
-from db import ensure_view, get_video_list, query_boxes, query_next_hit, query_prev_hit, query_timeline
-from templates import render_index
+from src.db import (
+    ensure_view,
+    get_video_list,
+    query_boxes,
+    query_next_hit,
+    query_prev_hit,
+    query_timeline,
+)
+from src.templates import render_index
 
 router = APIRouter()
 

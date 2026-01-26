@@ -6,7 +6,7 @@ from typing import Dict, List, Tuple
 import duckdb
 from fastapi import HTTPException
 
-from settings import BOXES_DIR, FPS, VIDEOS_DIR
+from src.settings import BOXES_DIR, FPS, VIDEOS_DIR
 
 # DuckDB connection (in-memory) and a tiny cache for created views
 con = duckdb.connect(database=":memory:")
