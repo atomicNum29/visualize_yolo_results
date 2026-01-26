@@ -20,9 +20,9 @@
   }
 
   video {
-    width: 100%;
+    /* width: 1640px; */
     max-height: 78vh;
-    background: #000000;
+    background: #00000000;
     object-fit: contain;
   }
 
@@ -91,7 +91,7 @@
     <div class="row">
       <div style="flex:1;">
         <div style="font-size:12px; margin-bottom:4px;">Timeline (click to seek)</div>
-        <canvas id="timeline"></canvas>
+        <canvas style="position: relative;" id="timeline"></canvas>
       </div>
     </div>
   </div>
@@ -135,7 +135,9 @@
 
   function resizeTimeline() {
     const rect = tl.getBoundingClientRect();
-    tl.width = Math.floor(rect.width);
+    // timeline 캔버스 크기 설정, width 는 video 표시 크기에 맞춤
+    tl.width = Math.floor(v.getBoundingClientRect().width);
+    tl.style.width = tl.width + 'px';
     tl.height = Math.floor(rect.height);
   }
 
@@ -193,11 +195,12 @@
     const sy = c.height / vh;
 
     ctx.lineWidth = 2;
+    ctx.strokeStyle = 'red';
     for (const b of boxes) {
-      const x = b.x * sx;
-      const y = b.y * sy;
       const w = b.width * sx;
       const h = b.height * sy;
+      const x = b.x * sx - w / 2;
+      const y = b.y * sy - h / 2;
       ctx.strokeRect(x, y, w, h);
     }
   }
