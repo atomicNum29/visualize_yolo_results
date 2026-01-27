@@ -142,6 +142,9 @@
   let lastFrame = -1;
   let timeline = null; // Uint16Array-ish (counts per bin)
   let binSec = 1;
+  const BOX_CHUNK_FRAMES = Math.max(30, Math.round(FPS * 2)); // batch size for box prefetch
+  let boxesCache = new Map();
+  let inflightBoxes = null;
 
   function clamp(x, a, b) { return Math.max(a, Math.min(b, x)); }
 
@@ -184,6 +187,7 @@
     lastFrame = -1;
     boxesPre.textContent = '-';
     info.textContent = '';
+    clearBoxesCache();
 
     const url = sel.selectedOptions[0].dataset.url;
     v.src = url;
@@ -206,6 +210,8 @@
       resizeCanvasToVideo();
       resizeTimeline();
       drawTimeline();
+      // prefetch first chunk to avoid initial draw delay
+      schedulePrefetch(0);
       // duration 기반 seek bar 설정
       if (Number.isFinite(v.duration)) {
         seek.max = String(Math.max(0, v.duration));
@@ -237,11 +243,40 @@
     }
   }
 
-  async function fetchBoxes(frame) {
-    if (!currentVideo) return [];
-    const r = await fetch(`/api/videos/${currentVideo}/boxes?frame=${frame}`);
-    if (!r.ok) return [];
-    return await r.json();
+  function clearBoxesCache() {
+    boxesCache = new Map();
+    inflightBoxes = null;
+  }
+
+  async function fetchBoxesRange(start, end) {
+    if (!currentVideo) return {};
+    const r = await fetch(`/api/videos/${currentVideo}/boxes_range?start_frame=${start}&end_frame=${end}`);
+    if (!r.ok) return {};
+    const j = await r.json();
+    for (const [k, v] of Object.entries(j.boxes || {})) {
+      boxesCache.set(Number(k), v);
+    }
+    return j.boxes || {};
+  }
+
+  function schedulePrefetch(frame) {
+    const start = Math.max(0, frame - Math.floor(BOX_CHUNK_FRAMES / 3));
+    const end = start + BOX_CHUNK_FRAMES - 1;
+    if (inflightBoxes && frame >= inflightBoxes.start && frame <= inflightBoxes.end) {
+      return inflightBoxes.promise;
+    }
+    const promise = fetchBoxesRange(start, end).finally(() => {
+      if (inflightBoxes && inflightBoxes.promise === promise) inflightBoxes = null;
+    });
+    inflightBoxes = { start, end, promise };
+    return promise;
+  }
+
+  async function getBoxesForFrame(frame) {
+    const cached = boxesCache.get(frame);
+    if (cached) return cached;
+    await schedulePrefetch(frame);
+    return boxesCache.get(frame) || [];
   }
 
   function currentFrame() {
@@ -254,9 +289,21 @@
       const f = currentFrame();
       if (f !== lastFrame) {
         lastFrame = f;
-        const boxes = await fetchBoxes(f);
-        boxesPre.textContent = JSON.stringify(boxes, null, 2);
-        drawBoxes(boxes);
+        const cached = boxesCache.get(f);
+        if (cached) {
+          boxesPre.textContent = JSON.stringify(cached, null, 2);
+          drawBoxes(cached);
+        } else {
+          // draw nothing while fetching new chunk; fire prefetch in background
+          drawBoxes([]);
+          schedulePrefetch(f).then(() => {
+            const bx = boxesCache.get(currentFrame());
+            if (bx && currentVideo) {
+              boxesPre.textContent = JSON.stringify(bx, null, 2);
+              drawBoxes(bx);
+            }
+          });
+        }
         info.textContent = `t=${v.currentTime.toFixed(3)}s, frame=${f}`;
       }
     }

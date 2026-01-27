@@ -6,6 +6,7 @@ from src.db import (
     ensure_view,
     get_video_list,
     query_boxes,
+    query_boxes_range,
     query_next_hit,
     query_prev_hit,
     query_timeline,
@@ -29,6 +30,17 @@ def api_videos():
 def api_boxes(video_id: str, frame: int = Query(..., ge=0)):
     view = ensure_view(video_id)
     return query_boxes(view, frame)
+
+
+@router.get("/api/videos/{video_id}/boxes_range")
+def api_boxes_range(
+    video_id: str,
+    start_frame: int = Query(..., ge=0),
+    end_frame: int = Query(..., ge=0),
+):
+    view = ensure_view(video_id)
+    boxes = query_boxes_range(view, start_frame, end_frame)
+    return {"boxes": boxes, "start_frame": start_frame, "end_frame": end_frame}
 
 
 @router.get("/api/videos/{video_id}/timeline")

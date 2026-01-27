@@ -86,6 +86,30 @@ def query_boxes(view: str, frame: int) -> List[Dict]:
     ]
 
 
+def query_boxes_range(
+    view: str, start_frame: int, end_frame: int
+) -> Dict[int, List[Dict]]:
+    if start_frame > end_frame:
+        start_frame, end_frame = end_frame, start_frame
+
+    rows = con.execute(
+        f"""
+        SELECT frame::INTEGER AS frame, x, y, width, height, box_index
+        FROM {view}
+        WHERE frame BETWEEN ? AND ?
+        ORDER BY frame, box_index
+        """,
+        [start_frame, end_frame],
+    ).fetchall()
+
+    out: Dict[int, List[Dict]] = {}
+    for frame, x, y, w, h, idx in rows:
+        out.setdefault(int(frame), []).append(
+            {"x": x, "y": y, "width": w, "height": h, "box_index": idx}
+        )
+    return out
+
+
 def query_timeline(view: str, bin_sec: int) -> List[int]:
     rows = con.execute(
         f"""
