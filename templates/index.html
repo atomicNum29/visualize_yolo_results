@@ -124,13 +124,13 @@
     background-color: #45a049;
   }
 
-  /* [추가됨] 필터 컨트롤 스타일 */
-  .filter-control {
-    background: #f0f0f0;
-    padding: 8px;
-    border-radius: 4px;
-    font-size: 12px;
-    margin-top: 10px;
+  /* 스캔 상태 표시 */
+  #scan-status {
+    color: red;
+    font-weight: bold;
+    margin-left: 10px;
+    display: none;
+    font-size: 14px;
   }
 </style>
 
@@ -151,7 +151,9 @@
     <div class="row">
       <button id="prevHit">Prev hit</button>
       <button id="nextHit">Next hit</button>
-      <button id="prevF">-1 frame</button>
+      <span id="scan-status">Skipping filtered...</span>
+
+      <button id="prevF" style="margin-left:auto;">-1 frame</button>
       <button id="nextF">+1 frame</button>
 
       <button id="playPause">Play</button>
@@ -203,17 +205,10 @@
       <div id="logPreview" class="log-preview"></div>
     </div>
 
-    <div class="filter-control">
-      <h3 style="margin-top:0; margin-bottom:8px;">Detection Filter</h3>
-      <label title="이 시간(프레임) 이상 제자리에 있으면 숨깁니다">
-        <input type="checkbox" id="staticFilterOn" checked>
-        Hide Static Objects (Fix Duration: <span id="staticThresDisplay">30</span> frames)
-      </label>
-      <br>
-      <input type="range" id="staticThresRange" min="5" max="150" value="30" style="width:100%">
-    </div>
-
     <h3 style="margin-top:10px;">Current boxes</h3>
+    <div style="font-size:11px; color:#666; margin-bottom:4px;">
+      * Server-side filtering active (Static objects removed)
+    </div>
     <pre id="boxes">-</pre>
   </div>
 </div>
@@ -235,11 +230,7 @@
   const speedSelect = document.getElementById('speed');
   const tl = document.getElementById('timeline');
   const tlx = tl.getContext('2d');
-
-  // Filter UI
-  const staticFilterOn = document.getElementById('staticFilterOn');
-  const staticThresRange = document.getElementById('staticThresRange');
-  const staticThresDisplay = document.getElementById('staticThresDisplay');
+  const scanStatus = document.getElementById('scan-status');
 
   // --- Global State ---
   let isSeeking = false;
@@ -259,69 +250,6 @@
   const displayIn = document.getElementById('displayIn');
   const displayOut = document.getElementById('displayOut');
   const logPreview = document.getElementById('logPreview');
-
-  // --- [핵심] 정적 물체 필터 로직 ---
-  class StaticObjectFilter {
-    constructor() {
-      // trackers: { x, y, life, maxLife }
-      this.trackers = [];
-      this.distanceThreshold = 20; // 픽셀 단위 허용 오차 (비디오 원본 해상도 기준)
-      this.decayRate = 2;          // 감지 안 될 때 life 감소량
-      this.growthRate = 1;         // 감지 될 때 life 증가량
-    }
-
-    // threshold: 이 값 이상 life가 쌓이면 정적 물체로 판단
-    process(boxes, thresholdFrames) {
-      if (!boxes) return [];
-
-      // 1. 모든 트래커의 생명력(life)을 일단 감소시킴 (Decay step)
-      this.trackers.forEach(t => t.life -= this.decayRate);
-
-      const activeBoxes = [];
-
-      boxes.forEach(box => {
-        // 박스 중심점 계산
-        const bx = box.x + box.width / 2;
-        const by = box.y + box.height / 2;
-        let matched = false;
-
-        // 2. 기존 트래커와 거리 비교
-        for (let t of this.trackers) {
-          const dist = Math.sqrt((t.x - bx) ** 2 + (t.y - by) ** 2);
-          if (dist < this.distanceThreshold) {
-            // 매칭됨: 트래커 위치 업데이트(스무딩) 및 생명력 증가
-            t.x = t.x * 0.7 + bx * 0.3;
-            t.y = t.y * 0.7 + by * 0.3;
-            t.life += (this.decayRate + this.growthRate); // 감소분 보전 + 증가
-            matched = true;
-
-            // **필터링 판단**: 생명력이 임계치보다 낮으면(아직 움직이는 중이면) 화면에 표시
-            if (t.life < thresholdFrames) {
-              activeBoxes.push(box);
-            }
-            break;
-          }
-        }
-
-        // 3. 매칭 안 된 새로운 박스는 새 트래커 생성
-        if (!matched) {
-          this.trackers.push({ x: bx, y: by, life: 10 }); // 초기 life 10 부여
-          activeBoxes.push(box);
-        }
-      });
-
-      // 4. 완전히 사라진 트래커 제거 (메모리 관리)
-      this.trackers = this.trackers.filter(t => t.life > 0);
-
-      return activeBoxes;
-    }
-
-    reset() {
-      this.trackers = [];
-    }
-  }
-
-  const staticFilter = new StaticObjectFilter();
 
   // --- Utility Functions ---
   function clamp(x, a, b) { return Math.max(a, Math.min(b, x)); }
@@ -356,8 +284,7 @@
 
   // --- Data Loading ---
   async function loadVideos() {
-    const r = await fetch('api/videos');
-    console.log(r);
+    const r = await fetch('/api/videos');
     const list = await r.json();
     sel.innerHTML = '';
     for (const it of list) {
@@ -380,7 +307,6 @@
     info.textContent = '';
     clearBoxesCache();
     resetCounters();
-    staticFilter.reset(); // 비디오 변경 시 필터 초기화
 
     const url = sel.selectedOptions[0].dataset.url;
     v.src = url;
@@ -392,7 +318,7 @@
     seek.max = '0';
     timeLbl.textContent = '00:00:00 / 00:00:00';
 
-    const tr = await fetch(`api/videos/${video_id}/timeline?bin_sec=${binSec}`);
+    const tr = await fetch(`/api/videos/${video_id}/timeline?bin_sec=${binSec}`);
     const tj = await tr.json();
     timeline = tj.counts;
     drawTimeline();
@@ -416,7 +342,7 @@
   }
   async function fetchBoxesRange(start, end) {
     if (!currentVideo) return {};
-    const r = await fetch(`api/videos/${currentVideo}/boxes_range?start_frame=${start}&end_frame=${end}`);
+    const r = await fetch(`/api/videos/${currentVideo}/boxes_range?start_frame=${start}&end_frame=${end}`);
     if (!r.ok) return {};
     const j = await r.json();
     for (const [k, v] of Object.entries(j.boxes || {})) {
@@ -437,6 +363,13 @@
     return promise;
   }
 
+  async function getBoxesForFrame(frame) {
+    const cached = boxesCache.get(frame);
+    if (cached) return cached;
+    await schedulePrefetch(frame);
+    return boxesCache.get(frame) || [];
+  }
+
   // --- Render Loop ---
   function currentFrame() {
     return Math.max(0, Math.round(v.currentTime * FPS));
@@ -445,19 +378,7 @@
   function drawBoxes(boxes) {
     ctx.clearRect(0, 0, c.width, c.height);
     if (!overlayToggle.checked) return;
-
-    // [수정됨] 정적 필터 적용
-    let boxesToDraw = boxes || [];
-    if (staticFilterOn.checked) {
-      const threshold = parseInt(staticThresRange.value);
-      // 필터링: 오래 머문 박스는 제외된 리스트를 반환
-      boxesToDraw = staticFilter.process(boxes, threshold);
-    } else {
-      // 꺼져있어도 트래커 내부 상태 업데이트를 위해 process는 호출하되 원본 사용
-      staticFilter.process(boxes, 99999);
-    }
-
-    if (boxesToDraw.length === 0) return;
+    if (!boxes || boxes.length === 0) return;
 
     const vw = v.videoWidth;
     const vh = v.videoHeight;
@@ -467,7 +388,7 @@
 
     ctx.lineWidth = 2;
     ctx.strokeStyle = 'red';
-    for (const b of boxesToDraw) {
+    for (const b of boxes) {
       const w = b.width * sx;
       const h = b.height * sy;
       const x = b.x * sx - w / 2;
@@ -475,10 +396,7 @@
       ctx.strokeRect(x, y, w, h);
     }
 
-    // 디버깅용: 텍스트 갱신
-    if (boxes) {
-      boxesPre.textContent = `Raw: ${boxes.length}, Filtered: ${boxesToDraw.length}\n` + JSON.stringify(boxesToDraw, null, 2);
-    }
+    boxesPre.textContent = `Count: ${boxes.length}\n` + JSON.stringify(boxes, null, 2);
   }
 
   async function tick() {
@@ -487,12 +405,8 @@
       if (f !== lastFrame) {
         lastFrame = f;
         const cached = boxesCache.get(f);
-
-        // 데이터가 있든 없든 drawBoxes를 호출하여(빈 배열이라도) 필터 상태 갱신
         const boxes = cached || [];
-        if (!cached) {
-          schedulePrefetch(f);
-        }
+        if (!cached) schedulePrefetch(f);
 
         drawBoxes(boxes);
         info.textContent = `t=${formatTime(v.currentTime)}, frame=${f}`;
@@ -533,7 +447,7 @@
     timeLbl.textContent = `${formatTime(v.currentTime)} / ${formatTime(dur)}`;
   }
 
-  // --- Event Listeners: Counter ---
+  // --- Counter & Log ---
   function resetCounters() {
     countIn = 0; countOut = 0; eventLogs = [];
     updateCounterUI(); renderLogs();
@@ -563,16 +477,27 @@
       }
     }
   }
+
+  // [수정됨] 수동 조작 시 + 버튼도 로그를 남기도록 변경
   window.manualAdjust = function (type, delta) {
     if (type === 'in') {
-      if (delta > 0) { countIn++; }
-      else if (countIn > 0) { countIn--; removeLastLog('IN'); }
-    } else {
-      if (delta > 0) { countOut++; }
-      else if (countOut > 0) { countOut--; removeLastLog('OUT'); }
+      if (delta > 0) {
+        countIn++;
+        addLog('IN'); // [추가] + 버튼 누를 때 로그 생성
+      } else {
+        if (countIn > 0) { countIn--; removeLastLog('IN'); }
+      }
+    } else { // out
+      if (delta > 0) {
+        countOut++;
+        addLog('OUT'); // [추가] + 버튼 누를 때 로그 생성
+      } else {
+        if (countOut > 0) { countOut--; removeLastLog('OUT'); }
+      }
     }
     updateCounterUI();
   };
+
   window.downloadCSV = function () {
     if (eventLogs.length === 0) { alert("No logs."); return; }
     let csv = "data:text/csv;charset=utf-8,Video Time,Real Time,Type\n";
@@ -588,7 +513,7 @@
     document.body.removeChild(link);
   };
 
-  // --- Event Listeners: Player ---
+  // --- Event Listeners ---
   playPauseBtn.addEventListener('click', async () => {
     v.paused ? v.play().catch(() => { }) : v.pause();
     updatePlayPauseLabel();
@@ -622,9 +547,15 @@
     else if (e.code === 'ArrowRight') { e.preventDefault(); moveFrame(1); lastFrame = -1; }
     else if (e.key.toLowerCase() === 'n') { e.preventDefault(); jumpHit('next'); }
     else if (e.key.toLowerCase() === 'p') { e.preventDefault(); jumpHit('prev'); }
-    else if (e.key.toLowerCase() === 'i') { e.preventDefault(); window.manualAdjust('in', 1); addLog('IN'); updateCounterUI(); }
-    else if (e.key.toLowerCase() === 'o') { e.preventDefault(); window.manualAdjust('out', 1); addLog('OUT'); updateCounterUI(); }
+    else if (e.key.toLowerCase() === 'i') { e.preventDefault(); window.manualAdjust('in', 1); updateCounterUI(); } // Keydown에서는 addLog 중복 방지 (manualAdjust가 호출하므로)
+    else if (e.key.toLowerCase() === 'o') { e.preventDefault(); window.manualAdjust('out', 1); updateCounterUI(); }
   });
+
+  // [수정됨] 키보드 단축키 핸들러 약간 수정 (중복 로그 방지)
+  // 키보드로 'I'를 누르면 -> manualAdjust('in', 1)을 호출 -> 거기서 addLog('IN') 실행
+  // 따라서 기존 keydown 리스너에서 직접 addLog를 호출하던 부분은 제거하거나 통합해야 합니다.
+  // 위 keydown 리스너에서 이미 manualAdjust를 호출하도록 변경해두었습니다.
+
   tl.addEventListener('click', (e) => {
     if (!timeline || !currentVideo || !v.duration) return;
     const rect = tl.getBoundingClientRect();
@@ -639,18 +570,42 @@
   document.getElementById('nextHit').onclick = () => jumpHit('next');
   window.addEventListener('resize', () => { resizeCanvasToVideo(); resizeTimeline(); drawTimeline(); updateTimeUI(); });
 
-  // [추가됨] 필터 슬라이더 이벤트
-  staticThresRange.addEventListener('input', () => {
-    staticThresDisplay.textContent = staticThresRange.value;
-    // 슬라이더 조정 시 즉시 반영을 위해 현재 프레임 다시 그리기 시도
-    lastFrame = -1;
-  });
-
   async function moveFrame(delta) { if (currentVideo) v.currentTime = (currentFrame() + delta) / FPS + 0.0001; }
+
   async function jumpHit(dir) {
     if (!currentVideo) return;
-    const r = await fetch(`api/videos/${currentVideo}/${dir}_hit?frame=${currentFrame()}`);
-    if (r.ok) { const j = await r.json(); if (j.frame != null) v.currentTime = j.frame / FPS + 0.0001; }
+
+    scanStatus.style.display = 'inline';
+    scanStatus.textContent = 'Scanning...';
+
+    const MAX_SKIPS = 50;
+    let skips = 0;
+    let searchFrame = currentFrame();
+
+    while (skips < MAX_SKIPS) {
+      const r = await fetch(`/api/videos/${currentVideo}/${dir}_hit?frame=${searchFrame}`);
+      if (!r.ok) break;
+      const j = await r.json();
+
+      if (j.frame == null) break;
+
+      const boxes = await getBoxesForFrame(j.frame);
+
+      if (boxes && boxes.length > 0) {
+        v.currentTime = j.frame / FPS + 0.0001;
+        break;
+      } else {
+        searchFrame = j.frame;
+        skips++;
+      }
+    }
+
+    if (skips >= MAX_SKIPS) {
+      scanStatus.textContent = 'No active hits found';
+      setTimeout(() => { scanStatus.style.display = 'none'; }, 2000);
+    } else {
+      scanStatus.style.display = 'none';
+    }
   }
 
   loadVideos();
