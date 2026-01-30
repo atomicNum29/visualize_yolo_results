@@ -578,7 +578,7 @@
     if (!currentVideo) return;
 
     // 단순 호출
-    const r = await fetch(`/api/videos/${currentVideo}/${dir}_hit?frame=${currentFrame()}`);
+    const r = await fetch(`api/videos/${currentVideo}/${dir}_hit?frame=${currentFrame()}`);
     if (r.ok) {
       const j = await r.json();
       if (j.frame != null) {
