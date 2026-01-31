@@ -2,9 +2,9 @@
 <meta charset="utf-8">
 <title>Video + YOLO Boxes Viewer</title>
 
-<head>
+<!-- <head>
   <base href="/videoviewer/">
-</head>
+</head> -->
 <style>
   body {
     font-family: sans-serif;
@@ -124,8 +124,16 @@
     background-color: #45a049;
   }
 
-  .clear-btn { flex: 1; background-color: #f44336; color: white; border: none; }
-  .clear-btn:hover { background-color: #d32f2f; }
+  .clear-btn {
+    flex: 1;
+    background-color: #f44336;
+    color: white;
+    border: none;
+  }
+
+  .clear-btn:hover {
+    background-color: #d32f2f;
+  }
 
   /* 완료 상태 버튼 스타일 */
   #toggleCompleteBtn {
@@ -134,20 +142,25 @@
     border-radius: 4px;
     transition: all 0.2s;
   }
+
   /* 미완료 상태 (기본) */
   #toggleCompleteBtn.incomplete {
     background-color: #f0f0f0;
     color: #555;
   }
+
   #toggleCompleteBtn.incomplete:hover {
     background-color: #e0e0e0;
   }
+
   /* 완료 상태 */
   #toggleCompleteBtn.completed {
-    background-color: #4CAF50; /* Green */
+    background-color: #4CAF50;
+    /* Green */
     color: white;
     border-color: #45a049;
   }
+
   #toggleCompleteBtn.completed:hover {
     background-color: #45a049;
   }
@@ -166,12 +179,12 @@
       <label>Video:</label>
       <select id="sel"></select>
       <button id="reload">Reload list</button>
-      
+
       <div style="display:inline-flex; gap:5px; margin-left:10px;">
         <button id="toggleProgressBtn" class="incomplete" onclick="toggleProgress()">In Progress</button>
         <button id="toggleCompleteBtn" class="incomplete" onclick="toggleCompletion()">Completed</button>
       </div>
-      
+
       <label style="margin-left:12px;"><input type="checkbox" id="overlay" checked> Overlay</label>
     </div>
 
@@ -183,7 +196,7 @@
     <div class="row">
       <button id="prevHit">Prev hit</button>
       <button id="nextHit">Next hit</button>
-      
+
       <button id="prevF" style="margin-left:auto;">-1 frame</button>
       <button id="nextF">+1 frame</button>
 
@@ -238,12 +251,12 @@
           <button onclick="manualAdjust('out', -1)">-</button>
         </div>
       </div>
-      
+
       <div class="btn-group">
         <button class="download-btn" onclick="downloadCSV()">Download Log</button>
         <button class="clear-btn" onclick="clearCurrentVideoLog()">Clear Log</button>
       </div>
-      
+
       <div style="font-size: 12px; margin-top: 8px; font-weight: bold;">Current Video Logs:</div>
       <div id="logPreview" class="log-preview"></div>
     </div>
@@ -255,6 +268,8 @@
 
 <script>
   const FPS = Number('{{ FPS }}');
+
+  const API_BASE = `${window.location.origin}/api`;
 
   // --- HTML Elements ---
   const sel = document.getElementById('sel');
@@ -281,11 +296,11 @@
   // --- Global State ---
   let isSeeking = false;
   let currentVideo = null;
-  let videoList = []; 
+  let videoList = [];
   let lastFrame = -1;
-  let timeline = null; 
+  let timeline = null;
   let binSec = 1;
-  const BOX_CHUNK_FRAMES = Math.max(300, Math.round(FPS * 10)); 
+  const BOX_CHUNK_FRAMES = Math.max(300, Math.round(FPS * 10));
   let boxesCache = new Map();
   let inflightBoxes = null;
   let currentSpeed = parseFloat(speedSelect.value) || 1;
@@ -311,25 +326,25 @@
   function renderVideoDropdown() {
     const currentSelection = sel.value;
     sel.innerHTML = '';
-    
+
     for (const it of videoList) {
       const opt = document.createElement('option');
       opt.value = it.video_id;
-      
+
       let prefix = "";
       if (it.status === 'completed') {
         prefix = "✅ ";
       } else if (it.status === 'in_progress') {
         prefix = "🚧 ";
       }
-      
-      opt.textContent = `${prefix}${it.video_id}`; 
+
+      opt.textContent = `${prefix}${it.video_id}`;
       opt.dataset.url = it.url;
-      opt.dataset.status = it.status; 
-      
+      opt.dataset.status = it.status;
+
       sel.appendChild(opt);
     }
-    
+
     if (currentSelection) sel.value = currentSelection;
   }
 
@@ -351,7 +366,7 @@
 
     opt.textContent = `${prefix}${currentVideo}`;
     opt.dataset.status = status;
-    
+
     const vidItem = videoList.find(v => v.video_id === currentVideo);
     if (vidItem) {
       vidItem.status = status;
@@ -361,13 +376,13 @@
   // --- Server Communication ---
   async function fetchLogFromServer(video_id) {
     try {
-      const r = await fetch(`api/logs/${video_id}`);
+      const r = await fetch(`${API_BASE}/logs/${video_id}`);
       if (r.ok) {
         const data = await r.json();
         countIn = data.in;
         countOut = data.out;
         isCompleted = data.is_completed;
-        isInProgress = data.is_in_progress || false; 
+        isInProgress = data.is_in_progress || false;
         eventLogs = data.logs;
       } else {
         countIn = 0; countOut = 0; isCompleted = false; isInProgress = false; eventLogs = [];
@@ -379,7 +394,7 @@
 
   async function saveLogToServer() {
     if (!currentVideo) return;
-    
+
     syncStatus.textContent = "Saving...";
     syncStatus.style.color = "orange";
 
@@ -392,12 +407,12 @@
     };
 
     try {
-      const r = await fetch(`api/logs/${currentVideo}`, {
+      const r = await fetch(`${API_BASE}/logs/${currentVideo}`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload)
       });
-      
+
       if (r.ok) {
         syncStatus.textContent = "Saved";
         syncStatus.style.color = "green";
@@ -416,7 +431,7 @@
   // --- Status Toggle Logic (상호 배제 적용) ---
 
   // 1. 작업 중 버튼 토글
-  window.toggleProgress = function() {
+  window.toggleProgress = function () {
     if (!currentVideo) return;
 
     // 이미 켜져있으면 -> 끔 (New 상태)
@@ -433,7 +448,7 @@
   };
 
   // 2. 완료 버튼 토글
-  window.toggleCompletion = function() {
+  window.toggleCompletion = function () {
     if (!currentVideo) return;
 
     // 이미 완료면 -> 끔 (New 상태)
@@ -444,11 +459,11 @@
       isCompleted = true;
       isInProgress = false;
     }
-    
+
     updateStatusUI();
     saveLogToServer();
   };
-  
+
   // 버튼 스타일 업데이트
   function updateStatusUI() {
     // 1. Completed Button State
@@ -504,9 +519,9 @@
 
   // --- Data Loading ---
   async function loadVideos() {
-    const r = await fetch('api/videos');
+    const r = await fetch(`${API_BASE}/videos`);
     videoList = await r.json(); // 전역 변수에 저장
-    
+
     renderVideoDropdown(); // 드롭다운 그리기 분리
 
     if (videoList.length) {
@@ -524,9 +539,9 @@
     boxesPre.textContent = '-';
     info.textContent = '';
     clearBoxesCache();
-  
+
     await fetchLogFromServer(video_id);
-    
+
     updateCounterUI();
     renderLogs();
     updateStatusUI();
@@ -541,7 +556,7 @@
     // 현재 서버가 루트(/videos) 요청을 거부하고 있으므로, 
     // 앞의 슬래시를 제거해 base 태그(/videoviewer/)가 적용되도록 강제합니다.
     if (url.startsWith('/')) {
-        url = url.substring(1); 
+      url = url.substring(1);
     }
 
     v.src = url;
@@ -553,7 +568,7 @@
     seek.max = '0';
     timeLbl.textContent = '00:00:00 / 00:00:00';
 
-    const tr = await fetch(`api/videos/${video_id}/timeline?bin_sec=${binSec}`);
+    const tr = await fetch(`${API_BASE}/videos/${video_id}/timeline?bin_sec=${binSec}`);
     const tj = await tr.json();
     timeline = tj.counts;
     drawTimeline();
@@ -577,7 +592,7 @@
   }
   async function fetchBoxesRange(start, end) {
     if (!currentVideo) return {};
-    const r = await fetch(`api/videos/${currentVideo}/boxes_range?start_frame=${start}&end_frame=${end}`);
+    const r = await fetch(`${API_BASE}/videos/${currentVideo}/boxes_range?start_frame=${start}&end_frame=${end}`);
     if (!r.ok) return {};
     const j = await r.json();
     for (const [k, v] of Object.entries(j.boxes || {})) {
@@ -636,7 +651,12 @@
 
   async function tick() {
     if (v.readyState >= 2 && currentVideo) {
+      if (lastFrame === currentFrame()) {
+        requestAnimationFrame(tick);
+        return;
+      }
       const f = currentFrame();
+      lastFrame = f;
       const cached = boxesCache.get(f);
 
       // keep last drawn boxes as a fallback so we never "miss" drawing
@@ -715,38 +735,38 @@
   function addLog(type) {
     eventLogs.push({ rawTime: v.currentTime, type: type });
     renderLogs();
-    saveLogToServer(); 
+    saveLogToServer();
   }
   function removeLastLog(type) {
     for (let i = eventLogs.length - 1; i >= 0; i--) {
       if (eventLogs[i].type === type) {
-        eventLogs.splice(i, 1); 
-        renderLogs(); 
-        saveLogToServer(); 
+        eventLogs.splice(i, 1);
+        renderLogs();
+        saveLogToServer();
         return;
       }
     }
   }
-  window.manualAdjust = function(type, delta) {
+  window.manualAdjust = function (type, delta) {
     if (type === 'in') {
-      if (delta > 0) { countIn++; addLog('IN'); } 
+      if (delta > 0) { countIn++; addLog('IN'); }
       else if (countIn > 0) { countIn--; removeLastLog('IN'); }
     } else {
-      if (delta > 0) { countOut++; addLog('OUT'); } 
+      if (delta > 0) { countOut++; addLog('OUT'); }
       else if (countOut > 0) { countOut--; removeLastLog('OUT'); }
     }
     updateCounterUI();
   };
-  window.clearCurrentVideoLog = function() {
+  window.clearCurrentVideoLog = function () {
     if (confirm(`'${currentVideo}'의 서버 로그를 초기화하시겠습니까?`)) {
       countIn = 0; countOut = 0; eventLogs = []; isCompleted = false; isInProgress = false;
       updateCounterUI(); renderLogs(); updateStatusUI();
       saveLogToServer();
     }
   };
-  window.downloadCSV = function() {
+  window.downloadCSV = function () {
     if (eventLogs.length === 0) { alert("No logs for this video."); return; }
-    let csv = "data:text/csv;charset=utf-8,Video ID,Video Time,Real Time,Type\n"; 
+    let csv = "data:text/csv;charset=utf-8,Video ID,Video Time,Real Time,Type\n";
     eventLogs.forEach(row => {
       csv += `${currentVideo},${formatTime(row.rawTime)},${formatTime(row.rawTime + 28800)},${row.type}\n`;
     });
@@ -808,7 +828,7 @@
   sel.onchange = () => selectVideo(sel.value);
   document.getElementById('prevF').onclick = () => moveFrame(-1);
   document.getElementById('nextF').onclick = () => moveFrame(1);
-  
+
   document.getElementById('prevHit').onclick = () => jumpHit('prev');
   document.getElementById('nextHit').onclick = () => jumpHit('next');
   window.addEventListener('resize', () => { resizeCanvasToVideo(); resizeTimeline(); drawTimeline(); updateTimeUI(); });
@@ -818,7 +838,7 @@
   async function jumpHit(dir) {
     if (!currentVideo) { console.warn("No video selected."); return; }
     const currentF = currentFrame();
-    const url = `api/videos/${currentVideo}/${dir}_hit?frame=${currentF}`;
+    const url = `${API_BASE}/videos/${currentVideo}/${dir}_hit?frame=${currentF}`;
     try {
       const r = await fetch(url);
       if (!r.ok) { console.error(`[JumpHit] Server Error: ${r.status}`); return; }
