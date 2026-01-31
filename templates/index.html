@@ -637,15 +637,30 @@
   async function tick() {
     if (v.readyState >= 2 && currentVideo) {
       const f = currentFrame();
-      if (f !== lastFrame) {
-        lastFrame = f;
-        const cached = boxesCache.get(f);
-        const boxes = cached || [];
-        if (!cached) schedulePrefetch(f);
+      const cached = boxesCache.get(f);
 
-        drawBoxes(boxes);
-        info.textContent = `t=${formatTime(v.currentTime)}, frame=${f}`;
+      // keep last drawn boxes as a fallback so we never "miss" drawing
+      if (typeof window._lastDrawnBoxes === 'undefined') window._lastDrawnBoxes = [];
+
+      if (cached) {
+        window._lastDrawnBoxes = cached;
+        drawBoxes(cached);
+      } else {
+        // draw fallback immediately (last known boxes)
+        drawBoxes(window._lastDrawnBoxes);
+
+        // schedule prefetch for chunk and also request exact-frame boxes;
+        schedulePrefetch(f);
+        getBoxesForFrame(f).then((b) => {
+          // only update if still on the same frame
+          if (currentFrame() === f) {
+            window._lastDrawnBoxes = b || [];
+            drawBoxes(window._lastDrawnBoxes);
+          }
+        }).catch(() => { /* ignore fetch errors */ });
       }
+
+      info.textContent = `t=${formatTime(v.currentTime)}, frame=${f}`;
     }
     requestAnimationFrame(tick);
   }
