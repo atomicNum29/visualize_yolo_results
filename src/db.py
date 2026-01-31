@@ -1,12 +1,13 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Any
 
 import duckdb
 from fastapi import HTTPException
 
-from src.settings import BOXES_DIR, FPS, VIDEOS_DIR
+from src.settings import BOXES_DIR, FPS, VIDEOS_DIR, LOG_DIR
 
 # DuckDB connection (in-memory) and a tiny cache for created views
 con = duckdb.connect(database=":memory:")
@@ -25,24 +26,74 @@ def video_id_from_parquet(path: Path) -> str:
 
 
 def get_video_list() -> List[Dict]:
-    if not BOXES_DIR.exists():
+    if not VIDEOS_DIR.exists():
         return []
     out = []
-    for path in sorted(BOXES_DIR.glob("*.parquet")):
-        vid = video_id_from_parquet(path)
-        video_path = VIDEOS_DIR / f"{vid}.mp4"
-        if not video_path.exists():
-            continue
+    for path in sorted(VIDEOS_DIR.glob("*.mp4")):
+        vid = video_id_from_name(path)
+
+        log_data = load_video_log(vid)
+
+        status = "new"
+        if log_data.get("is_completed", False):
+            status = "completed"
+        elif log_data.get("is_in_progress", False):
+            status = "in_progress"
+
         out.append(
             {
                 "video_id": vid,
-                "file": video_path.name,
-                "url": f"videos/{video_path.name}",
+                "file": path.name,
+                "url": f"/videos/{path.name}",
                 "fps": FPS,
+                "status": status,
+                "in_count": log_data.get("in", 0),
+                "out_count": log_data.get("out", 0)
             }
         )
     return out
 
+def load_video_log(video_id: str) -> Dict[str, Any]:
+    """
+    서버에 저장된 해당 비디오의 로그 파일(JSON)을 읽어서 반환합니다.
+    파일이 없으면 기본 초기값을 반환합니다.
+    """
+    log_path = LOG_DIR / f"{video_id}.json"
+    
+    # 기본 구조
+    default_log = {
+        "in": 0,
+        "out": 0,
+        "is_completed": False,
+        "logs": []
+    }
+
+    if not log_path.exists():
+        return default_log
+    
+    try:
+        with open(log_path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+            # 키 누락 방지를 위해 default와 병합
+            return {**default_log, **data}
+    except Exception as e:
+        print(f"[DB] Error loading log for {video_id}: {e}")
+        return default_log
+
+
+def save_video_log(video_id: str, data: Dict[str, Any]) -> bool:
+    """
+    프론트엔드에서 받은 작업 데이터를 JSON 파일로 저장합니다.
+    """
+    log_path = LOG_DIR / f"{video_id}.json"
+    
+    try:
+        with open(log_path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+        return True
+    except Exception as e:
+        print(f"[DB] Error saving log for {video_id}: {e}")
+        return False
 
 def ensure_view(video_id: str) -> str:
     """

@@ -11,3 +11,4 @@ wheels/
 
 data/boxes/*
 data/videos/*
+data/logs/*
