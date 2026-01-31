@@ -76,6 +76,7 @@
     width: 100%;
     height: 60px;
     border: 1px solid #ddd;
+    pointer-events: auto;
   }
 
   pre {
@@ -242,8 +243,13 @@
 
     <div class="row">
       <div style="flex:1;">
-        <div style="font-size:12px; margin-bottom:4px;">Timeline (click to seek)</div>
-        <canvas style="position: relative;" id="timeline"></canvas>
+        <div style="font-size:12px; margin-bottom:4px;">Timeline</div>
+        <div style="position:relative;">
+          <canvas style="position: relative;" id="timeline"></canvas>
+          <div id="stick" style="position:absolute; top:0; left:0; width:2px; height:60px;
+                      background:red; transform:translateX(0px); will-change:transform;">
+          </div>
+        </div>
       </div>
     </div>
   </div>
@@ -309,6 +315,7 @@
   const timeLbl = document.getElementById('time');
   const speedSelect = document.getElementById('speed');
   const tl = document.getElementById('timeline');
+  const stick = document.getElementById('stick');
   const tlx = tl.getContext('2d');
   const toggleCompleteBtn = document.getElementById('toggleCompleteBtn');
   const toggleProgressBtn = document.getElementById('toggleProgressBtn');
@@ -841,6 +848,11 @@
     }
     const dur = Number.isFinite(v.duration) ? v.duration : 0;
     timeLbl.textContent = `${formatTime(v.currentTime)} / ${formatTime(dur)}`;
+    if (Number.isFinite(dur) && dur > 0) {
+      const ratio = v.currentTime / dur;           // 0..1
+      const x = ratio * tl.clientWidth;                // px
+      stick.style.transform = `translateX(${x}px)`;
+    }
   }
 
   // --- Counter & Log Functions ---
@@ -876,7 +888,7 @@
   window.manualAdjust = function (type, delta) {
     // 완료 상태이면 아무 동작도 하지 않고 종료
     if (isCompleted) {
-      return; 
+      return;
     }
     if (type === 'in') {
       if (delta > 0) { countIn++; addLog('IN'); }
@@ -951,7 +963,10 @@
   tl.addEventListener('click', (e) => {
     if (!timeline || !currentVideo || !v.duration) return;
     const rect = tl.getBoundingClientRect();
-    const t = clamp(Math.floor((e.clientX - rect.left) * timeline.length / rect.width), 0, timeline.length - 1) * binSec;
+    console.log('Click position:', e.clientX);
+    console.log('Timeline width:', rect.width);
+    console.log('Timeline length:', timeline.length);
+    const t = clamp(Math.floor((e.clientX) * timeline.length / rect.width), 0, timeline.length - 1) * binSec;
     v.currentTime = clamp(t, 0, v.duration - 0.01);
   });
   document.getElementById('reload').onclick = loadVideos;
