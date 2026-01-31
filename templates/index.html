@@ -49,6 +49,13 @@
     margin: 8px 0;
   }
 
+  .interface-button {
+    width: 81px;
+    height: 34px;
+    min-width: 81px;
+    box-sizing: border-box;
+  }
+
   /* 필터 스타일 추가 */
   .filter-group {
     display: flex;
@@ -234,13 +241,12 @@
     </div>
 
     <div class="row">
-      <button id="prevHit">Prev hit</button>
-      <button id="nextHit">Next hit</button>
+      <button id="prevHit" class="interface-button">Prev hit</button>
+      <button id="nextHit" class="interface-button">Next hit</button>
 
-      <button id="prevF" style="margin-left:auto;">-1 frame</button>
-      <button id="nextF">+1 frame</button>
-
-      <button id="playPause">Play</button>
+      <button id="prevF" class="interface-button">-1 frame</button>
+      <button id="nextF" class="interface-button">+1 frame</button>
+      <button id="playPause" class="interface-button">Play</button>
       <label style="display:flex; align-items:center; gap:4px;">
         Speed
         <select id="speed">
@@ -846,7 +852,7 @@
         }).catch(() => { /* ignore fetch errors */ });
       }
 
-      info.textContent = `t=${formatTime(v.currentTime)}, frame=${f}`;
+      info.textContent = `frame=${f}`;
     }
     requestAnimationFrame(tick);
   }
