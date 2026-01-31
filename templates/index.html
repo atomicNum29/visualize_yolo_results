@@ -720,6 +720,17 @@
     const tr = await fetch(`${API_BASE}/videos/${video_id}/timeline?bin_sec=${binSec}`);
     const tj = await tr.json();
     timeline = tj.counts;
+    console.log("Loaded timeline with", timeline.length, "bins");
+    console.log("Video duration:", v.duration, "seconds");
+    if (v.duration > timeline.length * binSec) {
+      // 비디오 길이가 타임라인 길이보다 길면 타임라인 확장
+      const neededBins = Math.ceil(v.duration / binSec);
+      const extended = new Array(neededBins).fill(0);
+      for (let i = 0; i < timeline.length; i++) {
+        extended[i] = timeline[i];
+      }
+      timeline = extended;
+    }
     drawTimeline();
 
     v.onloadedmetadata = () => {
@@ -982,7 +993,7 @@
     console.log('Click position:', e.clientX);
     console.log('Timeline width:', rect.width);
     console.log('Timeline length:', timeline.length);
-    const t = clamp(Math.floor((e.clientX) * timeline.length / rect.width), 0, timeline.length - 1) * binSec;
+    const t = clamp(Math.floor((e.clientX - rect.left) * timeline.length / rect.width), 0, timeline.length - 1) * binSec;
     v.currentTime = clamp(t, 0, v.duration - 0.01);
   });
   document.getElementById('reload').onclick = loadVideos;
